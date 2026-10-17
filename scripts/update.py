@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,43 +53,64 @@ def period_row(rows, year, category, report_code, report_name, basis):
     return values
 
 
+def collect_report(job):
+    year, category, report_code, report_name = job
+    client = DartClient(timeout=20)
+    rows, basis = fetch_period(client, year, report_code)
+    if not rows:
+        return category, None
+    row = period_row(rows, year, category, report_code, report_name, basis)
+    if category != "annual":
+        row = calculate_period(row)
+    return category, row
+
+
 def main():
     if not (os.getenv("DART_API_KEY") or os.getenv("OPENDART_API_KEY")):
         raise RuntimeError("Repository Secret DART_API_KEY 또는 OPENDART_API_KEY를 설정해야 합니다.")
 
-    client = DartClient()
+    client = DartClient(timeout=20)
     now = datetime.now(timezone.utc)
     current_year = now.year
     annual, half_year, quarterly = {}, [], []
     warnings = []
     count = 0
 
-    # Archive the available filing list. Numeric financial statements are collected
-    # from 2015 because that is the supported start of the full-statement API.
+    # Archive the available filing list. Numerical statements are collected from 2015,
+    # the supported start of OpenDART's full-statement API.
     try:
         filings = client.filings(CORP_CODE, start="20100101", end=now.strftime("%Y%m%d"))
         save_json(ROOT / "data" / "raw" / "filings.json", filings)
     except Exception as exc:
         filings = []
         warnings.append(f"공시 목록 조회: {exc}")
+        print(f"[WARN] 공시 목록 조회 실패: {exc}")
 
+    jobs = []
     for year in range(START_YEAR, current_year + 1):
         for category, report_code, report_name in REPORTS:
             if category == "annual" and year == current_year:
                 continue
+            jobs.append((year, category, report_code, report_name))
+
+    # Several bounded workers avoid a long serial wait when a report endpoint stalls.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        future_jobs = {pool.submit(collect_report, job): job for job in jobs}
+        for future in as_completed(future_jobs):
+            year, category, report_code, report_name = future_jobs[future]
             try:
-                rows, basis = fetch_period(client, year, report_code)
-                if not rows:
+                result_category, row = future.result()
+                if row is None:
+                    print(f"[INFO] {year} {report_name}: no report data")
                     continue
-                row = period_row(rows, year, category, report_code, report_name, basis)
-                if category == "annual":
+                if result_category == "annual":
                     annual[str(year)] = row
-                elif category == "half_year":
-                    half_year.append(calculate_period(row))
+                elif result_category == "half_year":
+                    half_year.append(row)
                 else:
-                    quarterly.append(calculate_period(row))
+                    quarterly.append(row)
                 count += 1
-                print(f"[OK] {row['period_name']}: {len(rows)} accounts ({basis})")
+                print(f"[OK] {row['period_name']}: {row['source_account_count']} accounts ({row['financial_basis']})")
             except Exception as exc:
                 message = f"{year} {report_name}: {exc}"
                 warnings.append(message)
