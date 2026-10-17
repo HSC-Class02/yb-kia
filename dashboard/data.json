@@ -1,0 +1,30 @@
+{
+  "company": {
+    "name": "기아",
+    "english_name": "KIA CORPORATION",
+    "corp_code": "00106641",
+    "stock_code": "000270"
+  },
+  "updated_at": null,
+  "latest_year": null,
+  "data_coverage": {
+    "requested_start_year": 2015,
+    "first_annual_year": null,
+    "last_annual_year": null,
+    "annual_records": 0,
+    "half_year_records": 0,
+    "quarterly_records": 0
+  },
+  "years": {},
+  "periods": {
+    "annual": [],
+    "half_year": [],
+    "quarterly": []
+  },
+  "filings": [],
+  "methodology": {
+    "basis": "연결(CFS) 우선, 불가능한 경우 별도(OFS) 대체",
+    "notes": []
+  },
+  "collection_warnings": []
+}
