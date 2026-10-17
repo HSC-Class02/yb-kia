@@ -55,7 +55,7 @@ def period_row(rows, year, category, report_code, report_name, basis):
 
 def collect_report(job):
     year, category, report_code, report_name = job
-    client = DartClient(timeout=20)
+    client = DartClient(timeout=12)
     rows, basis = fetch_period(client, year, report_code)
     if not rows:
         return category, None
@@ -94,7 +94,7 @@ def main():
             jobs.append((year, category, report_code, report_name))
 
     # Several bounded workers avoid a long serial wait when a report endpoint stalls.
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         future_jobs = {pool.submit(collect_report, job): job for job in jobs}
         for future in as_completed(future_jobs):
             year, category, report_code, report_name = future_jobs[future]
